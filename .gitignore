@@ -1,0 +1,47 @@
+# Python
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Benchmarking & temp outputs
+benchmark_results*.json
+cookies.txt
+
+# Node / Frontend
+node_modules/
+.next/
+out/
+build/
+dist/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local tests and evaluation
+test_*.py
+evaluation_dataset.py
+evaluate_rag.py
+benchmark_*.py
+benchmark_*.json
+cookies.txt
+*.pdf
