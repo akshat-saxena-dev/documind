@@ -78,32 +78,39 @@ def create_user_session(user_id: str) -> str:
     return token
 
 
+
+def _session_cookie_settings() -> dict:
+    secure = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+    samesite = os.getenv("COOKIE_SAMESITE", "lax").lower()
+
+    return {
+        "secure": secure,
+        "samesite": samesite,
+        "httponly": True,
+        "path": "/",
+    }
+
+
 def set_session_cookie(
     response: Response,
     token: str,
 ) -> None:
-    """
-    Store the session token in an HttpOnly cookie.
-    """
+    """Store the session token in an HttpOnly cookie."""
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=token,
-        httponly=True,
-        secure=os.getenv("COOKIE_SECURE", "false").lower() == "true",
-        samesite="lax",
+        **_session_cookie_settings(),
         max_age=SESSION_DAYS * 24 * 60 * 60,
-        path="/",
     )
 
 
 def clear_session_cookie(response: Response) -> None:
-    """
-    Remove the authentication cookie.
-    """
+    """Remove the authentication cookie."""
     response.delete_cookie(
         key=SESSION_COOKIE_NAME,
-        path="/",
+        **_session_cookie_settings(),
     )
+
 
 
 def get_current_user(request: Request) -> dict:
