@@ -6,3 +6,5 @@ psycopg[binary]
 sentence-transformers
 pypdf
 python-multipart
+email-validator
+pwdlib[argon2]
