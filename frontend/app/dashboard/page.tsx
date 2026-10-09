@@ -21,7 +21,8 @@ type DashboardStats = {
   last_activity_at: string | null;
 };
 
-const API_URL = "http://localhost:8000";
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 function formatRelativeTime(dateString: string | null): string {
   if (!dateString) return "—";
