@@ -137,10 +137,26 @@ export default function DashboardPage() {
         body: formData,
       });
 
-      const data = await response.json();
+      let errorMessage = "Failed to upload document.";
+      try {
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          const data = await response.json();
+          if (data && data.detail) {
+            errorMessage = data.detail;
+          }
+        } else {
+          const text = await response.text();
+          if (text && text.length < 200) {
+            errorMessage = text;
+          }
+        }
+      } catch {
+        // Fallback to default message
+      }
 
       if (!response.ok) {
-        setUploadError(data.detail || "Failed to upload document.");
+        setUploadError(errorMessage);
         return;
       }
 

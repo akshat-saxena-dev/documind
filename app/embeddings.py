@@ -13,20 +13,14 @@ EMBEDDING_MODEL = "gemini-embedding-001"
 TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
-def generate_embeddings(
+MAX_BATCH_SIZE = 100
+
+
+def _generate_embedding_sub_batch(
     client: genai.Client,
     texts: list[str],
     max_attempts: int = 3,
 ) -> list[list[float]]:
-    if not texts:
-        return []
-
-    if any(not text.strip() for text in texts):
-        raise ValueError("Texts must not contain empty strings.")
-
-    if max_attempts <= 0:
-        raise ValueError("max_attempts must be positive.")
-
     last_error = None
 
     for attempt in range(max_attempts):
@@ -92,6 +86,34 @@ def generate_embeddings(
     raise RuntimeError(
         "Failed to generate embeddings."
     ) from last_error
+
+
+def generate_embeddings(
+    client: genai.Client,
+    texts: list[str],
+    max_attempts: int = 3,
+) -> list[list[float]]:
+    if not texts:
+        return []
+
+    if any(not text.strip() for text in texts):
+        raise ValueError("Texts must not contain empty strings.")
+
+    if max_attempts <= 0:
+        raise ValueError("max_attempts must be positive.")
+
+    all_vectors = []
+    for i in range(0, len(texts), MAX_BATCH_SIZE):
+        batch = texts[i:i + MAX_BATCH_SIZE]
+        batch_vectors = _generate_embedding_sub_batch(
+            client=client,
+            texts=batch,
+            max_attempts=max_attempts,
+        )
+        all_vectors.extend(batch_vectors)
+
+    return all_vectors
+
 
 
 def generate_query_embedding(
