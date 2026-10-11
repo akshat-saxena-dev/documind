@@ -1,6 +1,9 @@
-from sentence_transformers import CrossEncoder
 import math
 import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sentence_transformers import CrossEncoder
 
 logger = logging.getLogger("app.reranking")
 
@@ -15,7 +18,7 @@ MIN_RERANK_SCORE = -5.0
 
 _reranker = None
 
-def get_reranker() -> CrossEncoder:
+def get_reranker() -> "CrossEncoder":
     """
     Load the cross-encoder lazily.
     """
@@ -23,6 +26,7 @@ def get_reranker() -> CrossEncoder:
     global _reranker
 
     if _reranker is None:
+        from sentence_transformers import CrossEncoder
         _reranker = CrossEncoder(RERANKER_MODEL)
 
     return _reranker
