@@ -64,6 +64,8 @@ from app.database import (
     add_message,
     update_conversation_title,
     get_dashboard_stats,
+    DuplicateDocumentError,
+    get_document_by_content_hash,
 )
 
 from app.auth import (
@@ -1426,6 +1428,33 @@ async def upload_document(
                 detail="Could not create chunks from this PDF.",
             )
 
+        content_hash = get_document_hash(content)
+
+        # Re-use existing document if already uploaded by this user,
+        # or return a clean 409 conflict if uploaded by another user.
+        existing_doc = get_document_by_content_hash(content_hash)
+        if existing_doc:
+            if str(existing_doc["user_id"]) == str(user["id"]):
+                logger.info("Document already uploaded for user; reusing existing document", extra={
+                    "event": "document_upload_duplicate_reused",
+                    "document_id": existing_doc["id"],
+                })
+                return {
+                    "message": "Document already uploaded.",
+                    "document_id": existing_doc["id"],
+                    "filename": existing_doc["filename"],
+                    "total_pages": len(reader.pages),
+                    "total_chunks": existing_doc.get("chunk_count") or len(chunks),
+                }
+            else:
+                logger.warning("Duplicate document belongs to another user; rejecting upload", extra={
+                    "event": "document_upload_cross_user_conflict",
+                })
+                raise HTTPException(
+                    status_code=409,
+                    detail="A document with this identical content already exists.",
+                )
+
         # Generate embeddings for all document chunks.
         chunk_texts = [chunk["text"] for chunk in chunks]
 
@@ -1451,8 +1480,6 @@ async def upload_document(
             chunk["embedding"] = embedding
 
         # Save the document and chunks in Neon.
-        content_hash = get_document_hash(content)
-
         document_id = save_document(
             filename=file.filename,
             content_hash=content_hash,
@@ -1471,6 +1498,12 @@ async def upload_document(
             "total_pages": len(reader.pages),
             "total_chunks": len(chunks),
         }
+
+    except DuplicateDocumentError:
+        raise HTTPException(
+            status_code=409,
+            detail="A document with this identical content already exists.",
+        )
 
     except HTTPException:
         raise

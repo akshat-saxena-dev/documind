@@ -138,12 +138,16 @@ export default function DashboardPage() {
       });
 
       let errorMessage = "Failed to upload document.";
+      let successMessage = "Document uploaded successfully.";
       try {
         const contentType = response.headers.get("content-type") || "";
         if (contentType.includes("application/json")) {
           const data = await response.json();
           if (data && data.detail) {
             errorMessage = data.detail;
+          }
+          if (data && data.message) {
+            successMessage = data.message;
           }
         } else {
           const text = await response.text();
@@ -160,7 +164,7 @@ export default function DashboardPage() {
         return;
       }
 
-      setUploadSuccess("Document uploaded successfully.");
+      setUploadSuccess(successMessage);
       setSelectedFile(null);
 
       // Refresh document list and dashboard stats

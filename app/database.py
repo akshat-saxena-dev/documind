@@ -42,6 +42,40 @@ def get_document_hash(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+class DuplicateDocumentError(Exception):
+    """Raised when a document cannot be saved because another user owns identical content."""
+    pass
+
+
+def get_document_by_content_hash(content_hash: str) -> dict | None:
+    """
+    Lookup a document by its content hash.
+    Return document metadata and chunk count if found, otherwise None.
+    """
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT d.id, d.filename, d.user_id, COUNT(c.chunk_id)
+                FROM documents d
+                LEFT JOIN document_chunks c ON c.document_id = d.id
+                WHERE d.content_hash = %s
+                GROUP BY d.id, d.filename, d.user_id;
+                """,
+                (content_hash,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            return {
+                "id": str(row[0]),
+                "filename": row[1],
+                "user_id": str(row[2]),
+                "chunk_count": int(row[3]),
+            }
+
+
 def save_document(
     filename: str,
     content_hash: str,
@@ -51,43 +85,72 @@ def save_document(
     """
     Save a document and its chunks to PostgreSQL.
     Return the document UUID as a string.
+
+    If a document with the same content hash already exists:
+    - If owned by the same user, return the existing document id.
+    - If owned by a different user, raise DuplicateDocumentError.
     """
     with get_connection() as connection:
         with connection.cursor() as cursor:
-            # Reuse an existing document with identical content.
+            # Check if a document with identical content already exists.
             cursor.execute(
                 """
-                SELECT id
+                SELECT id, user_id
                 FROM documents
-                WHERE content_hash = %s
-                AND user_id = %s;
+                WHERE content_hash = %s;
                 """,
-                (content_hash, user_id),
+                (content_hash,),
             )
             existing = cursor.fetchone()
 
             if existing:
-                return str(existing[0])
+                existing_id, existing_user_id = existing
+                if str(existing_user_id) == str(user_id):
+                    return str(existing_id)
+                raise DuplicateDocumentError(
+                    "A document with this identical content already exists."
+                )
 
             document_id = uuid.uuid4()
 
-            cursor.execute(
-                """
-                INSERT INTO documents (
-                    id,
-                    filename,
-                    content_hash,
-                    user_id
+            try:
+                cursor.execute(
+                    """
+                    INSERT INTO documents (
+                        id,
+                        filename,
+                        content_hash,
+                        user_id
+                    )
+                    VALUES (%s, %s, %s, %s);
+                    """,
+                    (
+                        document_id,
+                        filename,
+                        content_hash,
+                        user_id,
+                    ),
                 )
-                VALUES (%s, %s, %s, %s);
-                """,
-                (
-                    document_id,
-                    filename,
-                    content_hash,
-                    user_id,
-                ),
-            )
+            except psycopg.errors.UniqueViolation:
+                # Concurrent upload race condition: another transaction committed first
+                connection.rollback()
+                with connection.cursor() as retry_cursor:
+                    retry_cursor.execute(
+                        """
+                        SELECT id, user_id
+                        FROM documents
+                        WHERE content_hash = %s;
+                        """,
+                        (content_hash,),
+                    )
+                    race_existing = retry_cursor.fetchone()
+                    if race_existing:
+                        existing_id, existing_user_id = race_existing
+                        if str(existing_user_id) == str(user_id):
+                            return str(existing_id)
+                raise DuplicateDocumentError(
+                    "A document with this identical content already exists."
+                )
 
             for chunk in chunks:
                 embedding = chunk["embedding"]
