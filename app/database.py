@@ -318,7 +318,7 @@ def create_user(
             cursor.execute(
                 """
                 INSERT INTO users (name, email, password_hash)
-                VALUES (%s, %s, %s)
+                VALUES (%s, LOWER(TRIM(%s)), %s)
                 RETURNING id, name, email;
                 """,
                 (name, email, password_hash),
@@ -344,7 +344,7 @@ def get_user_by_email(email: str):
                 """
                 SELECT id, name, email, password_hash
                 FROM users
-                WHERE email = %s;
+                WHERE email = LOWER(TRIM(%s));
                 """,
                 (email,),
             )
@@ -754,4 +754,4 @@ def get_dashboard_stats(user_id: str) -> dict:
         "questions_count": int(questions_count or 0),
         "last_activity_at": last_activity_at,
     }
-
+

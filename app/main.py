@@ -287,7 +287,7 @@ def signup(
     """
 
     existing_user = get_user_by_email(
-        request.email
+        request.email.strip().lower()
     )
 
     if existing_user:

@@ -1,10 +1,88 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export default function SignupPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const router = useRouter();
+
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [agreeTerms, setAgreeTerms] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSignup(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    setError("");
+
+    if (!name.trim()) {
+      setError("Please enter your name.");
+      return;
+    }
+
+    if (!email.trim()) {
+      setError("Please enter your email address.");
+      return;
+    }
+
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters long.");
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    if (!agreeTerms) {
+      setError("You must agree to the Terms of Service and Privacy Policy.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const response = await fetch(`${API_URL}/api/v1/auth/signup`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim().toLowerCase(),
+          password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.detail || "Account creation failed.");
+        return;
+      }
+
+      router.push("/dashboard");
+    } catch (err) {
+      console.error("Signup error:", err);
+      setError(
+        "Unable to connect to DocuMind. Make sure the backend is running.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#FFFCFA]">
@@ -171,7 +249,7 @@ export default function SignupPage() {
             {/* =================================================
                 FORM
             ================================================== */}
-            <form className="space-y-4 sm:space-y-5">
+            <form onSubmit={handleSignup} className="space-y-4 sm:space-y-5">
 
               {/* Full name */}
               <div>
@@ -187,6 +265,8 @@ export default function SignupPage() {
                   type="text"
                   placeholder="Enter your name"
                   autoComplete="name"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
                   className="w-full rounded-xl border border-[#E2E4EA] bg-white px-4 py-3.5 text-sm text-[#20263A] outline-none transition placeholder:text-[#A2A7B3] focus:border-[#818CF8] focus:ring-4 focus:ring-[#6366F1]/10"
                 />
               </div>
@@ -205,6 +285,8 @@ export default function SignupPage() {
                   type="email"
                   placeholder="you@example.com"
                   autoComplete="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
                   className="w-full rounded-xl border border-[#E2E4EA] bg-white px-4 py-3.5 text-sm text-[#20263A] outline-none transition placeholder:text-[#A2A7B3] focus:border-[#818CF8] focus:ring-4 focus:ring-[#6366F1]/10"
                 />
               </div>
@@ -224,6 +306,8 @@ export default function SignupPage() {
                     type={showPassword ? "text" : "password"}
                     placeholder="Create a password"
                     autoComplete="new-password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
                     className="w-full rounded-xl border border-[#E2E4EA] bg-white px-4 py-3.5 pr-20 text-sm text-[#20263A] outline-none transition placeholder:text-[#A2A7B3] focus:border-[#818CF8] focus:ring-4 focus:ring-[#6366F1]/10"
                   />
 
@@ -252,6 +336,8 @@ export default function SignupPage() {
                     type={showConfirmPassword ? "text" : "password"}
                     placeholder="Confirm your password"
                     autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
                     className="w-full rounded-xl border border-[#E2E4EA] bg-white px-4 py-3.5 pr-20 text-sm text-[#20263A] outline-none transition placeholder:text-[#A2A7B3] focus:border-[#818CF8] focus:ring-4 focus:ring-[#6366F1]/10"
                   />
 
@@ -275,6 +361,8 @@ export default function SignupPage() {
                 <input
                   id="terms"
                   type="checkbox"
+                  checked={agreeTerms}
+                  onChange={(event) => setAgreeTerms(event.target.checked)}
                   className="mt-1 h-4 w-4 shrink-0 rounded border-[#D5D8E0] accent-[#6366F1]"
                 />
 
@@ -301,14 +389,21 @@ export default function SignupPage() {
 
               </div>
 
+              {error && (
+                <div className="rounded-xl border border-[#FFD6D6] bg-[#FFF5F5] px-4 py-3 text-sm text-[#D64545]">
+                  {error}
+                </div>
+              )}
+
               {/* =================================================
                   SUBMIT
               ================================================== */}
               <button
                 type="submit"
-                className="w-full rounded-xl bg-[#6366F1] px-5 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#6366F1]/20 transition hover:-translate-y-0.5 hover:bg-[#4F46E5] hover:shadow-xl sm:text-base"
+                disabled={loading}
+                className="w-full rounded-xl bg-[#6366F1] px-5 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#6366F1]/20 transition hover:-translate-y-0.5 hover:bg-[#4F46E5] hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 sm:text-base"
               >
-                Create account
+                {loading ? "Creating account..." : "Create account"}
               </button>
 
             </form>
