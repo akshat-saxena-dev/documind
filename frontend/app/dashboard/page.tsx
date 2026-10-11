@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { API_URL } from "@/lib/apiConfig";
 
 type User = {
   id: string;
@@ -21,8 +22,6 @@ type DashboardStats = {
   last_activity_at: string | null;
 };
 
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 function formatRelativeTime(dateString: string | null): string {
   if (!dateString) return "—";
