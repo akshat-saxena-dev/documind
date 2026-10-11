@@ -725,7 +725,9 @@ def _run_rag_pipeline(
     Raises HTTPException on validation / retrieval failure so all endpoints
     get consistent error responses.
     """
-    # 1. Query expansion (same as /ask endpoint)
+    # 1. Query expansion
+    started_pipeline = time.perf_counter()
+    expansion_start = time.perf_counter()
     retrieval_queries = build_retrieval_queries(
         question,
         expansion_generator=lambda prompt: generate_content_with_retry(
@@ -734,13 +736,15 @@ def _run_rag_pipeline(
             max_attempts=1,
         ),
     )
+    expansion_duration = (time.perf_counter() - expansion_start) * 1000
     logger.info("Retrieval queries expanded", extra={
         "event": "retrieval_queries_expanded",
-        "question": question,
-        "queries": retrieval_queries,
+        "query_count": len(retrieval_queries),
+        "duration_ms": round(expansion_duration, 2),
     })
 
     # 2. Batch embed all queries
+    embed_start = time.perf_counter()
     try:
         query_embeddings = generate_query_embeddings(
             client=client,
@@ -758,8 +762,15 @@ def _run_rag_pipeline(
                 status_code=502,
                 detail="Failed to generate query embedding.",
             )
+    embed_duration = (time.perf_counter() - embed_start) * 1000
+    logger.info("Query embeddings generated", extra={
+        "event": "query_embeddings_generated",
+        "count": len(query_embeddings),
+        "duration_ms": round(embed_duration, 2),
+    })
 
     # 3. Retrieve per query and merge with RRF
+    search_start = time.perf_counter()
     per_query_counts = []
     query_results = []
     for query_embedding in query_embeddings:
@@ -772,11 +783,13 @@ def _run_rag_pipeline(
         per_query_counts.append(len(candidates))
         query_results.append(candidates)
     chunks = merge_retrieval_candidates(query_results)
+    search_duration = (time.perf_counter() - search_start) * 1000
 
     logger.info("Candidate retrieval completed", extra={
         "event": "candidate_retrieval_completed",
         "per_query_counts": per_query_counts,
         "unique_count": len(chunks),
+        "duration_ms": round(search_duration, 2),
         "top_similarities": [round(item["similarity"], 4) for item in chunks[:10]],
         "top_candidate_ids": [item["chunk_id"] for item in chunks[:10]],
     })
@@ -787,18 +800,24 @@ def _run_rag_pipeline(
             detail="Document not found or contains no stored chunks.",
         )
 
-    # 4. CrossEncoder reranking
+    # 4. CrossEncoder reranking / bounded semantic fallback
+    rerank_start = time.perf_counter()
     retrieved_chunks = rerank_chunks(
         question=question,
         chunks=chunks,
         top_k=FINAL_CONTEXT_CHUNKS,
     )
+    rerank_duration = (time.perf_counter() - rerank_start) * 1000
+    total_pipeline_duration = (time.perf_counter() - started_pipeline) * 1000
+
     logger.info("Chunk reranking completed", extra={
         "event": "reranking_completed",
         "selected_ids": [item["chunk_id"] for item in retrieved_chunks],
         "selected_scores": [round(item.get("rerank_score", 0.0), 4) for item in retrieved_chunks],
         "selected_pages": sorted({item["page_number"] for item in retrieved_chunks}),
         "count": len(retrieved_chunks),
+        "rerank_duration_ms": round(rerank_duration, 2),
+        "total_pipeline_duration_ms": round(total_pipeline_duration, 2),
     })
 
     # 5. Build Gemini prompt (or return no-info sentinel)
