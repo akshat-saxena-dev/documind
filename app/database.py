@@ -43,8 +43,25 @@ def get_document_hash(content: bytes) -> str:
 
 
 class DuplicateDocumentError(Exception):
-    """Raised when a document cannot be saved because another user owns identical content."""
+    """Retained for backward compatibility."""
     pass
+
+
+def ensure_schema_compatibility():
+    """
+    Ensure the database schema supports multiple uploads of identical content.
+    Drops the global unique constraint on documents.content_hash if it exists
+    and creates a non-unique index for lookup performance.
+    """
+    with get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_content_hash_key;
+                CREATE INDEX IF NOT EXISTS idx_documents_content_hash ON documents(content_hash);
+                """
+            )
+        connection.commit()
 
 
 def get_document_by_content_hash(content_hash: str) -> dict | None:
@@ -84,73 +101,31 @@ def save_document(
 ) -> str:
     """
     Save a document and its chunks to PostgreSQL.
+    Creates a new document entry with its own UUID for every upload,
+    allowing identical content to be uploaded independently.
     Return the document UUID as a string.
-
-    If a document with the same content hash already exists:
-    - If owned by the same user, return the existing document id.
-    - If owned by a different user, raise DuplicateDocumentError.
     """
     with get_connection() as connection:
         with connection.cursor() as cursor:
-            # Check if a document with identical content already exists.
-            cursor.execute(
-                """
-                SELECT id, user_id
-                FROM documents
-                WHERE content_hash = %s;
-                """,
-                (content_hash,),
-            )
-            existing = cursor.fetchone()
-
-            if existing:
-                existing_id, existing_user_id = existing
-                if str(existing_user_id) == str(user_id):
-                    return str(existing_id)
-                raise DuplicateDocumentError(
-                    "A document with this identical content already exists."
-                )
-
             document_id = uuid.uuid4()
 
-            try:
-                cursor.execute(
-                    """
-                    INSERT INTO documents (
-                        id,
-                        filename,
-                        content_hash,
-                        user_id
-                    )
-                    VALUES (%s, %s, %s, %s);
-                    """,
-                    (
-                        document_id,
-                        filename,
-                        content_hash,
-                        user_id,
-                    ),
+            cursor.execute(
+                """
+                INSERT INTO documents (
+                    id,
+                    filename,
+                    content_hash,
+                    user_id
                 )
-            except psycopg.errors.UniqueViolation:
-                # Concurrent upload race condition: another transaction committed first
-                connection.rollback()
-                with connection.cursor() as retry_cursor:
-                    retry_cursor.execute(
-                        """
-                        SELECT id, user_id
-                        FROM documents
-                        WHERE content_hash = %s;
-                        """,
-                        (content_hash,),
-                    )
-                    race_existing = retry_cursor.fetchone()
-                    if race_existing:
-                        existing_id, existing_user_id = race_existing
-                        if str(existing_user_id) == str(user_id):
-                            return str(existing_id)
-                raise DuplicateDocumentError(
-                    "A document with this identical content already exists."
-                )
+                VALUES (%s, %s, %s, %s);
+                """,
+                (
+                    document_id,
+                    filename,
+                    content_hash,
+                    user_id,
+                ),
+            )
 
             for chunk in chunks:
                 embedding = chunk["embedding"]

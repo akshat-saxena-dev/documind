@@ -8,6 +8,7 @@ import asyncio
 import threading
 from uuid import UUID, uuid4
 
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
@@ -66,6 +67,7 @@ from app.database import (
     get_dashboard_stats,
     DuplicateDocumentError,
     get_document_by_content_hash,
+    ensure_schema_compatibility,
 )
 
 from app.auth import (
@@ -194,10 +196,20 @@ client = genai.Client(api_key=API_KEY)
 configure_logging()
 logger = logging.getLogger("app.main")
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        ensure_schema_compatibility()
+    except Exception:
+        logger.warning("Could not verify schema compatibility on startup", exc_info=True)
+    yield
+
+
 app = FastAPI(
     title="DocuMind API",
     description="AI-powered document intelligence platform",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 
@@ -1430,31 +1442,6 @@ async def upload_document(
 
         content_hash = get_document_hash(content)
 
-        # Re-use existing document if already uploaded by this user,
-        # or return a clean 409 conflict if uploaded by another user.
-        existing_doc = get_document_by_content_hash(content_hash)
-        if existing_doc:
-            if str(existing_doc["user_id"]) == str(user["id"]):
-                logger.info("Document already uploaded for user; reusing existing document", extra={
-                    "event": "document_upload_duplicate_reused",
-                    "document_id": existing_doc["id"],
-                })
-                return {
-                    "message": "Document already uploaded.",
-                    "document_id": existing_doc["id"],
-                    "filename": existing_doc["filename"],
-                    "total_pages": len(reader.pages),
-                    "total_chunks": existing_doc.get("chunk_count") or len(chunks),
-                }
-            else:
-                logger.warning("Duplicate document belongs to another user; rejecting upload", extra={
-                    "event": "document_upload_cross_user_conflict",
-                })
-                raise HTTPException(
-                    status_code=409,
-                    detail="A document with this identical content already exists.",
-                )
-
         # Generate embeddings for all document chunks.
         chunk_texts = [chunk["text"] for chunk in chunks]
 
@@ -1498,12 +1485,6 @@ async def upload_document(
             "total_pages": len(reader.pages),
             "total_chunks": len(chunks),
         }
-
-    except DuplicateDocumentError:
-        raise HTTPException(
-            status_code=409,
-            detail="A document with this identical content already exists.",
-        )
 
     except HTTPException:
         raise
